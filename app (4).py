@@ -17,6 +17,12 @@ import pandas as pd
 import os, re, csv, math, shutil, zipfile, tempfile, io
 from collections import defaultdict
 from PIL import Image, UnidentifiedImageError, ImageOps
+from learning_engine import (
+    load_learned_keywords,
+    save_learned_keyword,
+    extract_candidate_phrase,
+    detect_intent as _engine_detect_intent,
+)
 
 st.set_page_config(page_title="Automation Agent", layout="centered")
 
@@ -76,64 +82,10 @@ TASKS = {
 }
 
 
-import json
-
-LEARNED_KEYWORDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "learned_keywords.json")
-
-
-def load_learned_keywords():
-    if os.path.exists(LEARNED_KEYWORDS_FILE):
-        try:
-            with open(LEARNED_KEYWORDS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-
-def save_learned_keyword(task_id, phrase):
-    """Append a new keyword/phrase to a task's learned list and persist to disk."""
-    learned = load_learned_keywords()
-    learned.setdefault(task_id, [])
-    phrase = phrase.strip().lower()
-    if phrase and phrase not in learned[task_id]:
-        learned[task_id].append(phrase)
-        with open(LEARNED_KEYWORDS_FILE, "w", encoding="utf-8") as f:
-            json.dump(learned, f, indent=2)
-    return learned
-
-
-STOPWORDS = {
-    "the", "a", "an", "this", "that", "these", "those", "and", "or", "to", "of", "in",
-    "on", "for", "with", "from", "my", "me", "i", "want", "please", "file", "files",
-    "is", "are", "it", "its", "do", "can", "you", "your", "use", "using", "need",
-}
-
-
-def extract_candidate_phrase(prompt):
-    """Pull a short, meaningful phrase out of the prompt to use as a future keyword."""
-    words = [w for w in re.findall(r"[a-zA-Z]+", prompt.lower()) if w not in STOPWORDS and len(w) > 2]
-    return " ".join(words[:4])  # short phrase, not the whole sentence
-
-
 def detect_intent(prompt: str):
-    """Returns (task_id, confidence) where confidence is 'high' or 'low'.
-    Uses both the hardcoded keywords and any learned keywords from past feedback."""
-    learned = load_learned_keywords()
-    prompt_l = prompt.lower()
-    scores = {}
-    for task_id, meta in TASKS.items():
-        all_kw = meta["keywords"] + learned.get(task_id, [])
-        score = sum(1 for kw in all_kw if kw in prompt_l)
-        if score > 0:
-            scores[task_id] = score
-    if not scores:
-        return None, None
-    best = max(scores, key=scores.get)
-    top_score = scores[best]
-    tied = [t for t, s in scores.items() if s == top_score]
-    confidence = "high" if len(tied) == 1 else "low"
-    return best, confidence
+    """Thin wrapper so the rest of app.py can keep calling detect_intent(prompt)
+    while the real logic lives in learning_engine.py (a separate file)."""
+    return _engine_detect_intent(prompt, TASKS)
 
 
 # ------------------------------------------------------------------
